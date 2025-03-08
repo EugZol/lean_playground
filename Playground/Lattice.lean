@@ -17,13 +17,19 @@ class PartialOrder (m : PartialOrderMagma) :=
   (asymm : ∀ a b, m.lte a b → m.lte b a → a = b)
   (trans : ∀ a b c, m.lte a b → m.lte b c → m.lte a c)
 
-class SetLattice (po : PartialOrder m) :=
-  (two_join : ∀ a b, ∃ c, m.lte a c ∧ m.lte b c ∧ (
+def isLeastUpperBound (m : PartialOrderMagma) (a b c : m.carrier) :=
+  m.lte a c ∧ m.lte b c ∧ (
     ∀ another_c, m.lte a another_c ∧ m.lte b another_c → m.lte c another_c
-  ))
-  (two_meet : ∀ a b, ∃ c, m.lte c a ∧ m.lte c b ∧ (
+  )
+
+def isGreatestLowerBound (m : PartialOrderMagma) (a b c : m.carrier) :=
+  m.lte c a ∧ m.lte c b ∧ (
     ∀ another_c, m.lte another_c a ∧ m.lte another_c b → m.lte another_c c
-  ))
+  )
+
+class SetLattice (po : PartialOrder m) :=
+  (two_join : ∀ a b, ∃ c, isLeastUpperBound m a b c)
+  (two_meet : ∀ a b, ∃ c, isGreatestLowerBound m a b c)
 
 section SetLatticeProperties
 
@@ -48,9 +54,13 @@ def dual_set_lattice (sl : SetLattice po) : SetLattice (dual_partial_order po) :
   {
     two_join := fun a b => by
       have h := sl.two_meet b a
+      unfold isLeastUpperBound
+      unfold isGreatestLowerBound at h
       tauto
     two_meet := fun a b => by
       have h := sl.two_join b a
+      unfold isLeastUpperBound at h
+      unfold isGreatestLowerBound
       tauto
   }
 
@@ -118,18 +128,104 @@ section LatticeProperties
 
 variable {m : LatticeDoubleMagma}
 
-open Lattice
+-- Each semilattice is the dual of the other.
+
+def dual_lattice_double_magma (lm : LatticeDoubleMagma) : LatticeDoubleMagma :=
+  {
+    carrier := lm.carrier,
+    join := fun a b => lm.meet a b,
+    meet := fun a b => lm.join a b
+  }
+
+def dual_lattice (l : Lattice m) : Lattice (dual_lattice_double_magma m) :=
+  {
+    join_assoc := l.meet_assoc,
+    meet_assoc := l.join_assoc,
+    join_comm := l.meet_comm,
+    meet_comm := l.join_comm,
+    join_meet_absorb := l.meet_join_absorb,
+    meet_join_absorb := l.join_meet_absorb
+  }
 
 theorem join_idempotency (l : Lattice m) : ∀ a, m.join a a = a := by
   intro  a
-  nth_rw 2 [← meet_join_absorb a a]
-  rw [join_meet_absorb]
+  nth_rw 2 [← l.meet_join_absorb a a]
+  rw [l.join_meet_absorb]
 
-theorem meet_idempotency (_ : Lattice m) : ∀ a, m.meet a a = a := by
+theorem meet_idempotency (l : Lattice m) : ∀ a, m.meet a a = a := by
   intro a
-  nth_rw 2 [← join_meet_absorb a a]
-  rw [meet_join_absorb]
+  nth_rw 2 [← l.join_meet_absorb a a]
+  rw [l.meet_join_absorb]
 
 end LatticeProperties
+
+section SetAlgebraEquivalence
+
+-- this vs separate instance Lattice (SetLattice.toLattice ...)?
+set_option pp.proofs true
+noncomputable def SetLattice.toLattice {m : PartialOrderMagma} {po : PartialOrder m} (sl : SetLattice po) :
+  Lattice {
+    carrier := m.carrier,
+    join := λ a b => Classical.choose (sl.two_join a b),
+    meet := λ a b => Classical.choose (sl.two_meet a b)
+  } :=
+  {
+    join_assoc := by
+      simp
+      intro a b c
+      congr
+      have ⟨h11, h12, h13⟩ := Classical.choose_spec (two_join po a b)
+      set c1 := Classical.choose (two_join po a b)
+      have ⟨h21, h22, h23⟩ := Classical.choose_spec (two_join po b c)
+      set c2 := Classical.choose (two_join po b c)
+      unfold isLeastUpperBound at *
+      ext x
+      simp at *
+      constructor
+      . intro ⟨h31, h32, h33⟩
+        constructor
+        . exact PartialOrder.trans a c1 x h11 h31
+        . constructor
+          . specialize h23 x
+            have h : m.lte b x := PartialOrder.trans b c1 x h12 h31
+            apply h23
+            trivial
+            trivial
+          . intro y y1 y2
+            specialize h33 y
+            have h : m.lte c y := PartialOrder.trans c c2 y h22 y2
+            specialize h13 y
+            apply h13 at y1
+            have h' : m.lte b y := PartialOrder.trans b c2 y h21 y2
+            apply y1 at h'
+            apply h33
+            trivial
+            trivial
+      . intro ⟨h31, h32, h33⟩
+        constructor
+        . have h : m.lte b x := PartialOrder.trans b c2 x h21 h32
+          specialize h13 x h31 h
+          exact h13
+        . constructor
+          . exact PartialOrder.trans c c2 x h22 h32
+          . intro y y1 y2
+            have h : m.lte a y := PartialOrder.trans a c1 y h11 y1
+            have h' : m.lte b y := PartialOrder.trans b c1 y h12 y1
+            specialize h23 y h' y2
+            exact h33 y h h23
+
+    meet_assoc := by
+      intro a b c
+      have dl := dual_lattice sl.toLattice
+      have h := dl.join_assoc a b c
+      tauto
+
+    join_comm := sorry,
+    meet_comm := sorry,
+    join_meet_absorb := sorry,
+    meet_join_absorb := sorry
+  }
+
+end SetAlgebraEquivalence
 
 end Playground
