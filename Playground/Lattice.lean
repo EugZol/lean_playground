@@ -38,20 +38,20 @@ variable {m : PartialOrderMagma} [po : PartialOrder m]
 
 -- Each semilattice is the dual of the other.
 
-def dual_partial_order_magma (m : PartialOrderMagma) : PartialOrderMagma :=
+def PartialOrderMagma.dual (m : PartialOrderMagma) : PartialOrderMagma :=
   {
     carrier := m.carrier,
     lte := fun a b => m.lte b a
   }
 
-def dual_partial_order (po : PartialOrder m) : PartialOrder (dual_partial_order_magma m) :=
+def PartialOrder.dual (po : PartialOrder m) : PartialOrder m.dual :=
   {
     rfl := po.rfl,
     asymm := fun a b hab hba => symm (po.asymm b a hab hba),
     trans := fun a b c hab hbc => po.trans c b a hbc hab
   }
 
-def dual_set_lattice (sl : SetLattice po) : SetLattice (dual_partial_order po) :=
+def SetLattice.dual (sl : SetLattice po) : SetLattice po.dual :=
   {
     two_join := fun a b => by
       have h := sl.two_meet b a
@@ -106,8 +106,7 @@ theorem all_join (sl : SetLattice po) (S : Finset m.carrier) (ne : S ≠ ∅) : 
 theorem all_meet (sl : SetLattice po) (S : Finset m.carrier) (ne : S ≠ ∅) : ∃ c, ((∀ x ∈ S, m.lte c x) ∧ (
   ∀ another_c, (∀ x ∈ S, m.lte another_c x) → m.lte another_c c
 )) := by
-  exact @all_join (dual_partial_order_magma m) (dual_partial_order po)
-    (dual_set_lattice sl) S ne
+  exact @all_join m.dual po.dual sl.dual S ne
 
 end SetLatticeProperties
 
@@ -285,7 +284,7 @@ lemma meet_assoc_eq
   {po : PartialOrder pom}
   (sl : SetLattice po) :
   let m := set_lattice_to_lattice_double_magma sl; ∀ a b c, m.meet (m.meet a b) c = m.meet a (m.meet b c) := by
-  exact join_assoc_eq (dual_set_lattice sl)
+  exact join_assoc_eq sl.dual
 
 -- this vs separate instance Lattice (SetLattice.toLattice ...)?
 noncomputable def SetLattice.toLattice {m : PartialOrderMagma} {po : PartialOrder m} (sl : SetLattice po) :
