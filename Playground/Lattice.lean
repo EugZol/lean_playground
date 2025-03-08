@@ -1,6 +1,7 @@
 -- https://en.wikipedia.org/wiki/Lattice_(order)
 
 import Mathlib.Tactic
+set_option pp.proofs true
 
 namespace Playground
 
@@ -105,9 +106,8 @@ theorem all_join (sl : SetLattice po) (S : Finset m.carrier) (ne : S ≠ ∅) : 
 theorem all_meet (sl : SetLattice po) (S : Finset m.carrier) (ne : S ≠ ∅) : ∃ c, ((∀ x ∈ S, m.lte c x) ∧ (
   ∀ another_c, (∀ x ∈ S, m.lte another_c x) → m.lte another_c c
 )) := by
-  have h := @all_join (dual_partial_order_magma m) (dual_partial_order po)
+  exact @all_join (dual_partial_order_magma m) (dual_partial_order po)
     (dual_set_lattice sl) S ne
-  tauto
 
 end SetLatticeProperties
 
@@ -161,8 +161,133 @@ end LatticeProperties
 
 section SetAlgebraEquivalence
 
+noncomputable def set_lattice_to_lattice_double_magma
+  {pom : PartialOrderMagma}
+  {po : PartialOrder pom}
+  (sl : SetLattice po) :
+  LatticeDoubleMagma :=
+  {
+    carrier := pom.carrier,
+    join := λ a b => Classical.choose (sl.two_join a b),
+    meet := λ a b => Classical.choose (sl.two_meet a b)
+  }
+
+lemma join_assoc_eq
+  {pom : PartialOrderMagma}
+  {po : PartialOrder pom}
+  (sl : SetLattice po) :
+  let m := set_lattice_to_lattice_double_magma sl; ∀ a b c, m.join (m.join a b) c = m.join a (m.join b c) := by
+  intro m
+  intro a b c
+  have hm : m.join = λ a b => Classical.choose (sl.two_join a b) := rfl
+  rw [hm]
+  simp
+  congr
+  -- Goal: isLeastUpperBound pom (Classical.choose (SetLattice.two_join po a b)) c =
+  --   isLeastUpperBound pom a (Classical.choose (SetLattice.two_join po b c))
+  -- Replacing encompassing expressions for "two_join a b" and "two_join b c"
+  --   with join_ab and join_bc (and judgements about them h_join_ab, h_join_bc)
+  --   respectively
+  have h_join_ab := Classical.choose_spec (SetLattice.two_join po a b)
+  have h_join_bc := Classical.choose_spec (SetLattice.two_join po b c)
+  set join_ab := Classical.choose (SetLattice.two_join po a b)
+  set join_bc := Classical.choose (SetLattice.two_join po b c)
+  unfold isLeastUpperBound at *
+  ext x
+  -- Goal: x is least upper bound for join_ab and c ↔
+  --   x is least upper bound for a and join_bc
+  constructor
+  . intro h' -- ->
+    -- We are given:
+    --
+    --    ┌─────► x ◄──────┐
+    --    │(h'.1)          │
+    -- join_ab   join_bc   │(h'.2)
+    --  ▲   ▲     ▲   ▲    │
+    --  │   │     │   │    │
+    --  a   └─ b ─┘   c ───┘
+    --
+    -- Goal:
+    --
+    -- ┌─► x ◄─┐
+    -- │       │
+    -- a    join_bc
+    --
+    -- By definition of least upper bound, we are to prove three facts:
+    --
+    -- 1. lte a x
+    -- 2. lte join_bc x
+    -- 3. if there is another such (1. and 2.) element x', then lte x x'
+    --
+    have h1 : pom.lte a x :=
+      -- Proved by transitivity: a -> join_ab -> x
+      PartialOrder.trans a join_ab x h_join_ab.1 h'.1
+    refine ⟨h1, ?_⟩
+    have h2 : pom.lte join_bc x :=
+      -- Proved by: x is upper bound for b and c;
+      --   but join_bc is LEAST upper bound for b and c
+      h_join_bc.2.2 x ⟨PartialOrder.trans b join_ab x h_join_ab.2.1 h'.1, h'.2.1⟩
+    refine ⟨h2, ?_⟩
+    -- Remaining goal: ∀ x', lte a x' ∧ lte join_bc x' → lte x x'
+    intro x' ⟨a_lte_x', join_bc_lte_x'⟩
+    -- Proved by:
+    -- 1. x' is upper bound for a, b => lte join_ab x' (least upper bound property of join_ab)
+    -- 2. x' is upper bound for join_ab, c => lte x x' (least upper bound property of x)
+    have b_lte_x' : pom.lte b x' := PartialOrder.trans b join_bc x' h_join_bc.1 join_bc_lte_x'
+    have join_ab_lte_x' : pom.lte join_ab x' :=
+      h_join_ab.2.2 x' ⟨a_lte_x', b_lte_x'⟩
+    have c_lte_x' : pom.lte c x' := PartialOrder.trans c join_bc x' h_join_bc.2.1 join_bc_lte_x'
+    exact h'.2.2 x' ⟨join_ab_lte_x', c_lte_x'⟩
+  . intro h' -- <-
+    -- We are given:
+    --
+    --  ┌──────► x ◄─────┐
+    --  │(h'.1)          │(h'.2)
+    --  │   join_ab   join_bc
+    --  │    ▲   ▲     ▲   ▲
+    --  │    │   │     │   │
+    --  └─── a   └─ b ─┘   c
+    --
+    -- Goal:
+    --
+    --    ┌─► x ◄─┐
+    --    │       │
+    -- join_ab    c
+    --
+    -- By definition of least upper bound, we are to prove three facts:
+    --
+    -- 1. lte join_ab x
+    -- 2. lte c x
+    -- 3. if there is another such (1. and 2.) element x', then lte x x'
+    --
+    have h1 : pom.lte join_ab x :=
+      -- Proved by: x is upper bound for a and b;
+      --   but join_ab is LEAST upper bound for a and b
+      h_join_ab.2.2 x ⟨h'.1, PartialOrder.trans b join_bc x h_join_bc.1 h'.2.1⟩
+    refine ⟨h1, ?_⟩
+    have h2 : pom.lte c x :=
+      -- Proved by transitivity: с -> join_bc -> x
+      PartialOrder.trans c join_bc x h_join_bc.2.1 h'.2.1
+    refine ⟨h2, ?_⟩
+    -- Remaining goal: ∀ x', lte join_ab x' ∧ lte c x' → lte x x'
+    intro x' ⟨join_ab_lte_x', c_lte_x'⟩
+    -- Proved by:
+    -- 1. x' is upper bound for b, c => lte join_bc x' (least upper bound property of join_bc)
+    -- 2. x' is upper bound for a, join_bc => lte x x' (least upper bound property of x)
+    have b_lte_x' : pom.lte b x' := PartialOrder.trans b join_ab x' h_join_ab.2.1 join_ab_lte_x'
+    have join_bc_lte_x' : pom.lte join_bc x' :=
+      h_join_bc.2.2 x' ⟨b_lte_x', c_lte_x'⟩
+    have a_lte_x' : pom.lte a x' := PartialOrder.trans a join_ab x' h_join_ab.1 join_ab_lte_x'
+    exact h'.2.2 x' ⟨a_lte_x', join_bc_lte_x'⟩
+
+lemma meet_assoc_eq
+  {pom : PartialOrderMagma}
+  {po : PartialOrder pom}
+  (sl : SetLattice po) :
+  let m := set_lattice_to_lattice_double_magma sl; ∀ a b c, m.meet (m.meet a b) c = m.meet a (m.meet b c) := by
+  exact join_assoc_eq (dual_set_lattice sl)
+
 -- this vs separate instance Lattice (SetLattice.toLattice ...)?
-set_option pp.proofs true
 noncomputable def SetLattice.toLattice {m : PartialOrderMagma} {po : PartialOrder m} (sl : SetLattice po) :
   Lattice {
     carrier := m.carrier,
@@ -170,56 +295,8 @@ noncomputable def SetLattice.toLattice {m : PartialOrderMagma} {po : PartialOrde
     meet := λ a b => Classical.choose (sl.two_meet a b)
   } :=
   {
-    join_assoc := by
-      simp
-      intro a b c
-      congr
-      have ⟨h11, h12, h13⟩ := Classical.choose_spec (two_join po a b)
-      set c1 := Classical.choose (two_join po a b)
-      have ⟨h21, h22, h23⟩ := Classical.choose_spec (two_join po b c)
-      set c2 := Classical.choose (two_join po b c)
-      unfold isLeastUpperBound at *
-      ext x
-      simp at *
-      constructor
-      . intro ⟨h31, h32, h33⟩
-        constructor
-        . exact PartialOrder.trans a c1 x h11 h31
-        . constructor
-          . specialize h23 x
-            have h : m.lte b x := PartialOrder.trans b c1 x h12 h31
-            apply h23
-            trivial
-            trivial
-          . intro y y1 y2
-            specialize h33 y
-            have h : m.lte c y := PartialOrder.trans c c2 y h22 y2
-            specialize h13 y
-            apply h13 at y1
-            have h' : m.lte b y := PartialOrder.trans b c2 y h21 y2
-            apply y1 at h'
-            apply h33
-            trivial
-            trivial
-      . intro ⟨h31, h32, h33⟩
-        constructor
-        . have h : m.lte b x := PartialOrder.trans b c2 x h21 h32
-          specialize h13 x h31 h
-          exact h13
-        . constructor
-          . exact PartialOrder.trans c c2 x h22 h32
-          . intro y y1 y2
-            have h : m.lte a y := PartialOrder.trans a c1 y h11 y1
-            have h' : m.lte b y := PartialOrder.trans b c1 y h12 y1
-            specialize h23 y h' y2
-            exact h33 y h h23
-
-    meet_assoc := by
-      intro a b c
-      have dl := dual_lattice sl.toLattice
-      have h := dl.join_assoc a b c
-      tauto
-
+    join_assoc := join_assoc_eq sl,
+    meet_assoc := meet_assoc_eq sl,
     join_comm := sorry,
     meet_comm := sorry,
     join_meet_absorb := sorry,
